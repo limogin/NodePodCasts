@@ -1,0 +1,6 @@
+milenio_3, http://www.cadenaser.com/rssaudio/milenium.html
+dia_qualquiera, http://www.rtve.es/api/programas/2054/audios.rss
+espacio_en_blanco, http://www.rtve.es/api/programas/23713/audios.rss
+ser_historia, http://www.cadenaser.com/rssaudio/ser-historia.html
+
+

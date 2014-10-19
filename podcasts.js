@@ -27,6 +27,34 @@ common.basename = function (path, suffix) {
 	  return b;
 };
 
+
+common.current_year_month = function () {
+	var t = new Date();
+	var d =util.format ("%d-%d", t.getFullYear(), (t.getMonth() + 1));
+	return d;	
+}
+
+
+common.previous_year_month = function (ndx) {
+	var t = new Date();
+	var m = t.getMonth()-ndx;
+	var y = t.getFullYear();
+	if (m<=0) { m=1; y = y - ndx; }
+	var d =util.format ("%d-%d", t, m);
+	return d;	
+}
+
+common.last_year_month = function () {
+	var t = new Date();
+	var m = t.getMonth();
+	var y = t.getFullYear();
+	if (m<=0) { m=1; y = y -1; }
+	var d =util.format ("%d-%d", t, m);
+	return d;	
+}
+
+
+
 common.md5 = function (s) {
 	var hash = crypto.createHash('md5').update(s).digest('hex');
 	return hash;
@@ -35,28 +63,34 @@ common.md5 = function (s) {
 
 common.download = function (myurl, dest, cb) {
 	var self=this;
-	var file = fs.createWriteStream(dest);
+	var file;
+	
 	var request = http.get(myurl, function(response) {
 		
 		if (response.statusCode > 300 && response.statusCode < 400 && response.headers.location) {
 	      self.download_iter+=1;
-		  if (self.download_iter>5) return cb (false, null);
+		  if (self.download_iter>5) {
+		    self.download_iter=0;
+		    return cb (false, {fname: myurl, result: 422});
+		  };
 		  self.download (response.headers.location, dest, cb);
-			
+		  	
 		} else { 
 		  self.download_iter=0;
+		  file = fs.createWriteStream(dest);
 	      response.pipe(file);
 	      file.on('finish', function() {
 	        file.close();
-	        return cb(true, null);
+	        return cb(true, {fname:myurl, result:200});
 	      });
 	      file.on('error', function () {
 	    	file.close();
-	    	return cb(false, null);
+			return cb(false, {fname:myurl, result:500});
 	      })
-	      
-		};
+	    };
+		
 	});
+	
 };
 
 
@@ -122,38 +156,7 @@ podcasts = function () {
 	
 };
 
-podcasts.prototype.month = function () {
-	var t = new Date();
-	// var d = sprintf ("%d-%02d", t.getFullYear(), (t.getMonth() + 1));
-	// var d = t.getFullYear() + '-' + (t.getMonth() + 1);
-	var d =util.format ("%d-%d", t.getFullYear(), (t.getMonth() + 1));
-	return d;	
-}
 
-
-podcasts.prototype.previous_month = function (ndx) {
-	var t = new Date();
-	var m = t.getMonth()-ndx;
-	var y = t.getFullYear();
-	if (m<=0) {
-		m=1;
-		y = y - ndx;
-	}
-	var d =util.format ("%d-%d", t, m);
-	return d;	
-}
-
-podcasts.prototype.last_month = function () {
-	var t = new Date();
-	var m = t.getMonth();
-	var y = t.getFullYear();
-	if (m<=0) {
-		m=1;
-		y = y -1;
-	}
-	var d =util.format ("%d-%d", t, m);
-	return d;	
-}
 
 
 /**
@@ -175,7 +178,8 @@ podcasts.prototype.load = function (cb) {
 				 if (entry[0]=='' || entry[1]=='') return;  
 				 // console.log ("folder " + entry[0] +  "url " + entry[1] + "\n");
 				 if (!fs.existsSync (entry[0])) fs.mkdirSync (entry[0]);
-				 if (!fs.existsSync (entry[0] + '/' + self.month())) fs.mkdirSync (entry[0] + '/' + self.month());
+				 if (!fs.existsSync (entry[0] + '/' + common.current_year_month())) fs.mkdirSync (entry[0] + '/' + common.current_year_month());
+				 if (!fs.existsSync (entry[0]+ '/rss')) fs.mkdirSync (entry[0]+'/rss');
 				 
 				 self.rss (entry[0] + '/', entry[1], function (e,r) {
 					ci++; if (ci>=c) { console.log ('fin ..'); return cb (e,r); }; 
@@ -201,28 +205,66 @@ podcasts.prototype.rss = function (myf, myurl, cb) {
     
 	common.get (myurl, function (e,r) {
 	  if (e) {
+		  var rss_file = myf + 'rss/' + common.md5(r) +'.rss';
+		  if (fs.existsSync(rss_file)) {
+			  console.log (myurl);
+			  console.log ('RSS already obtained, do not nothing!');
+              return cb(false, null);
+		  }
+		  fs.writeFileSync (rss_file, r);
+		  
 		  var u = common.findmp3 (r);
 		  var ci = 0;
 		  var entries = new Array();
 		  for (var i=0;i<u.length;i++) {
 	        var _f  = common.basename (u[i]);
-	        // var __f = common.md5(u[i]).substr(0,5)+'-'+_f;
-	        var __f = _f.replace ('.mp3', '-'+common.md5(u[i]).substr(0,2)+'.mp3');
-	        var myfile  = myf + self.month() + '/' + __f;
-	        var myfile2 = myf + self.last_month() + '/' + __f;
-	        var myfile3 = myf + self.previous_month(3) + '/' + __f; 
-	        if (fs.existsSync (myfile))  continue;
-	        if (fs.existsSync (myfile2)) continue;
-	        if (fs.existsSync (myfile3)) continue;
-	        entries[ci]={'path': myfile, 'url': u[i]}; ci++;
+	        
+	        var dm1 = /(\d{4})[-_\/](\d{2})[-_\/](\d{2})/;
+	        var dm2 = /(\d{2})[-_\/](\d{2})[-_\/](\d{4})/;
+	        var dm3 = /(\d{4})(\d{2})(\d{2})/;
+	        var m   = common.current_year_month();
+	        
+	        try {
+	         rm1 = dm1.exec(u[i]);
+	         rm2 = dm2.exec(u[i]);
+	         rm3 = dm3.exec(u[i]);
+	         if (rm1!=null) {
+	           m = rm1[1] + '-' + rm1[2];
+	         } else if (rm2!=null) {
+	           m = rm2[3] + '-' + rm2[1];
+	         } else if (rm3!=null) {
+	           if (rm3[1]<2000) {
+	        	   m = '20' + rm3[1].substr(0,2) + '-' + rm3[1].substr(2);
+	           } else {
+	               m = rm3[1] + '-' + rm3[2];
+	           };
+	         }
+	        } catch (e) {
+	          m   = common.current_year_month();
+	        }
+	        
+	        if (!fs.existsSync (myf + m)) fs.mkdirSync (myf + m);
+	        
+	        var __f = _f.replace ('.mp3', '_'+common.md5(u[i]).substr(0,2)+'.mp3');
+			var m1 = myf + m + '/' + __f;
+	        var m2 = myf + common.last_year_month() + '/' + __f;
+	        var m3 = myf + common.previous_year_month(3) + '/' + __f; 
+	        if (fs.existsSync (m1)) continue;
+	        if (fs.existsSync (m2)) continue;
+	        if (fs.existsSync (m3)) continue;
+	        entries[ci]={'path': m1, 'url': u[i]}; 
+	        ci++;
 	      }
+		  
+		  console.log (myurl.trim());
+		  console.log ('found: ' + entries.length + ' entries!');
 		  
 		  self.rss_download (entries, 0, function (e,r) {
 			 return cb (e,r); 
 		  });
 		  
 	  } else {
-		  return cb(false, 'can not obtain ' + myurl);
+		  return cb(false, 'Unable to obtain ' + myurl);
 	  }
     });
 	
@@ -230,7 +272,8 @@ podcasts.prototype.rss = function (myf, myurl, cb) {
 
 podcasts.prototype.rss_download = function (entries, index, cb) {
 	var self=this;
-	var entry = entries[index]; index++;
+	var entry = entries[index]; 
+	index++;
 	if (index >= entries.length) return cb (true, null);
 	if (fs.existsSync (entry.path))  {
 		return self.rss_download (entries, index, cb);
@@ -238,20 +281,24 @@ podcasts.prototype.rss_download = function (entries, index, cb) {
 	
 	console.log ('downloading .. ' + entry.url);
 	console.log ('file: ' + entry.path);
-    common.download (entry.url, entry.path, function (e,r) {
+	
+	common.download (entry.url, entry.path, function (e,r) {
+		console.log (r.fname);
     	if (e) {
-    	 console.log ('[ok]');
+    	 console.log ('OK, obtained! ');
     	} else {
-    	 console.log ('[error]');
+    	 console.log ('Unable to obtain: ' + r.result);
     	}
+    	// return cb (true, null);
     	self.rss_download (entries, index, cb);	
     });
-	
+   
 }
 
 
 var p = new podcasts();
 p.load (function (e,r) {
+	console.log ('ok, obtained last entries!');
 	process.exit ();
 });
 

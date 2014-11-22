@@ -95,23 +95,37 @@ common.download = function (myurl, dest, cb) {
 
 
 common.get = function (myurl, cb) {
-
+    var self=this;
+    
 	http.get (myurl, function (r) {
 		var data='';
 		
-		r.setEncoding('utf8');
-		r.on ('data', function (chunk) {
-  		  data+=chunk;
-  		});
+		if (r.statusCode > 300 && r.statusCode < 400 && r.headers.location) {
+	        
+	        if (url.parse(r.headers.location).hostname) {
+	            self.get (r.headers.location, cb);
+	        } else {
+	        	self.get (url.parse(myurl).hostname + '/' + r.headers.location, cb); 
+	        }
+
+	    } else {
+	    	
+	      r.setEncoding('utf8');
+		  r.on ('data', function (chunk) {
+  		    data+=chunk;
+  		  });
   		
-  	    r.on ('error', function (e) {
-  		 console.log ('error reading url: ' + e);
-  		 return cb(false,null);
-  	    });
+  	      r.on ('error', function (e) {
+  		    console.log ('error reading url: ' + e);
+  		    return cb(false,null);
+  	      });
   	    
-  	    r.on('end', function () {
-  	     return cb (true,data);
-  	    });
+  	      r.on('end', function () {
+  	        return cb (true,data);
+  	      });
+  	    
+	    };
+	    
   	});
 
 };
@@ -141,8 +155,7 @@ common.findmp3 = function (s) {
 
     var regexToken = /(((ftp|https?):\/\/)[\-\w@:%_\+.~#?,&\/\/=]+)\.mp3|((mailto:)?[_.\w-]+@([\w][\w\-]+\.)+[a-zA-Z]{2,3}\.mp3)/g;
 
-    while( (matchArray = regexToken.exec( source )) !== null )
-    {
+    while( (matchArray = regexToken.exec( source )) !== null ) {
         var token = matchArray[0];
         urlArray.push( token );
     }
@@ -174,6 +187,7 @@ podcasts.prototype.load = function (cb) {
 			 
 			 lines.map (function (entry) {
 				 entry = entry.trim();
+				 if (entry.substring(0,1)=='#') return; // a line comment 
 				 entry = entry.split (',');
 				 if (entry[0]=='' || entry[1]=='') return;  
 				 // console.log ("folder " + entry[0] +  "url " + entry[1] + "\n");
@@ -208,8 +222,8 @@ podcasts.prototype.rss = function (myf, myurl, cb) {
 		  var rss_file = myf + 'rss/' + common.md5(r) +'.rss';
 		  if (fs.existsSync(rss_file)) {
 			  console.log (myurl);
-			  console.log ('RSS already obtained, do not nothing!');
-              return cb(false, null);
+			  console.log ('RSS already obtained!!');
+              // return cb(false, null);
 		  }
 		  fs.writeFileSync (rss_file, r);
 		  
